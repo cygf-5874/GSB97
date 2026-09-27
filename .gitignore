@@ -1,0 +1,14 @@
+# Composer（本题不引入第三方依赖，仅作常规忽略）
+/vendor/
+composer.lock
+
+# 运行时产物与日志
+*.log
+*.cache
+.phpunit.result.cache
+php-cs-fixer.cache
+
+# 临时文件
+*.tmp
+*.bak
+.DS_Store
