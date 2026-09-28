@@ -28,7 +28,21 @@ final class Snapshot
      */
     public function pack(array $state, array $seen, int $modelVersion): string
     {
-        throw new \RuntimeException('not implemented');
+        $blob = json_encode(
+            [
+                'format' => self::FORMAT_VERSION,
+                'modelVersion' => $modelVersion,
+                'state' => $state,
+                'seen' => array_values($seen),
+            ],
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+
+        if ($blob === false) {
+            throw new ProjectionError('快照序列化失败', ProjectionError::SNAPSHOT_BLOB);
+        }
+
+        return $blob;
     }
 
     /**
@@ -36,6 +50,31 @@ final class Snapshot
      */
     public function unpack(string $blob): array
     {
-        throw new \RuntimeException('not implemented');
+        /** @var mixed $decoded */
+        $decoded = json_decode($blob, true);
+
+        if (!is_array($decoded)
+            || ($decoded['format'] ?? null) !== self::FORMAT_VERSION
+            || !is_int($decoded['modelVersion'] ?? null)
+            || !is_array($decoded['state'] ?? null)
+            || !is_array($decoded['seen'] ?? null)
+        ) {
+            throw new ProjectionError('快照 blob 无法解析', ProjectionError::SNAPSHOT_BLOB);
+        }
+
+        $seen = [];
+        foreach ($decoded['seen'] as $id) {
+            if (!is_string($id)) {
+                throw new ProjectionError('快照 blob 的去重集合非法', ProjectionError::SNAPSHOT_BLOB);
+            }
+
+            $seen[] = $id;
+        }
+
+        return [
+            'modelVersion' => $decoded['modelVersion'],
+            'state' => $decoded['state'],
+            'seen' => $seen,
+        ];
     }
 }

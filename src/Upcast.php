@@ -20,6 +20,9 @@ final class Upcast
     /** 当前模型版本：apply() 的终点。 */
     public const CURRENT_VERSION = 3;
 
+    /** @var array<int, callable(array<string, mixed>): array<string, mixed>> */
+    private array $steps = [];
+
     /**
      * 注册 v$from → v($from + 1) 的升版器。
      *
@@ -27,7 +30,14 @@ final class Upcast
      */
     public function register(int $from, callable $fn): void
     {
-        throw new \RuntimeException('not implemented');
+        if (isset($this->steps[$from])) {
+            throw new ProjectionError(
+                '升版器重复注册: v' . $from . ' → v' . ($from + 1),
+                ProjectionError::DUPLICATE_STEP
+            );
+        }
+
+        $this->steps[$from] = $fn;
     }
 
     /**
@@ -35,6 +45,28 @@ final class Upcast
      */
     public function apply(Event $event): Event
     {
-        throw new \RuntimeException('not implemented');
+        if ($event->version > self::CURRENT_VERSION) {
+            throw new ProjectionError(
+                '事件版本高于当前版本: v' . $event->version . ' > v' . self::CURRENT_VERSION,
+                ProjectionError::UPCAST_AHEAD
+            );
+        }
+
+        $resolved = $event;
+
+        for ($version = $event->version; $version < self::CURRENT_VERSION; $version++) {
+            if (!isset($this->steps[$version])) {
+                throw new ProjectionError(
+                    '缺失升版器: v' . $version . ' → v' . ($version + 1),
+                    ProjectionError::UPCAST_GAP
+                );
+            }
+
+            $resolved = $resolved
+                ->withPayload(($this->steps[$version])($resolved->payload))
+                ->withVersion($version + 1);
+        }
+
+        return $resolved;
     }
 }
