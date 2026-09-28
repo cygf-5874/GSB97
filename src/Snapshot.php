@@ -28,7 +28,24 @@ final class Snapshot
      */
     public function pack(array $state, array $seen, int $modelVersion): string
     {
-        throw new \RuntimeException('not implemented');
+        $ids = array_values($seen);
+        sort($ids, SORT_STRING);
+
+        $blob = json_encode(
+            [
+                'format' => self::FORMAT_VERSION,
+                'modelVersion' => $modelVersion,
+                'state' => self::canonical($state),
+                'seen' => $ids,
+            ],
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+
+        if ($blob === false) {
+            throw new ProjectionError('快照序列化失败');
+        }
+
+        return $blob;
     }
 
     /**
@@ -36,6 +53,51 @@ final class Snapshot
      */
     public function unpack(string $blob): array
     {
-        throw new \RuntimeException('not implemented');
+        /** @var mixed $decoded */
+        $decoded = json_decode($blob, true);
+
+        if (!is_array($decoded) || ($decoded['format'] ?? null) !== self::FORMAT_VERSION) {
+            throw new ProjectionError('快照 blob 无法解析', ProjectionError::SNAPSHOT_BLOB);
+        }
+
+        $modelVersion = $decoded['modelVersion'] ?? null;
+        $state = $decoded['state'] ?? null;
+        $seen = $decoded['seen'] ?? null;
+
+        if (!is_int($modelVersion) || !is_array($state) || !is_array($seen)) {
+            throw new ProjectionError('快照 blob 结构不完整', ProjectionError::SNAPSHOT_BLOB);
+        }
+
+        $ids = [];
+        foreach ($seen as $id) {
+            if (!is_string($id)) {
+                throw new ProjectionError('快照 blob 的去重集合含非字符串', ProjectionError::SNAPSHOT_BLOB);
+            }
+
+            $ids[] = $id;
+        }
+
+        return [
+            'modelVersion' => $modelVersion,
+            'state' => $state,
+            'seen' => $ids,
+        ];
+    }
+
+    /**
+     * @param array<array-key, mixed> $value
+     * @return array<array-key, mixed>
+     */
+    private static function canonical(array $value): array
+    {
+        ksort($value, SORT_STRING);
+
+        foreach ($value as $key => $item) {
+            if (is_array($item)) {
+                $value[$key] = self::canonical($item);
+            }
+        }
+
+        return $value;
     }
 }
